@@ -1,13 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<?import java.lang.*?>
-<?import javafx.scene.canvas.*?>
 <?import javafx.geometry.*?>
 <?import javafx.scene.canvas.Canvas?>
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
 <?import javafx.scene.text.*?>
-
 <GridPane maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="600.0"
           prefWidth="1000.0" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
           fx:controller="sample.Controller">
@@ -80,11 +77,8 @@
                 <Font size="17.0"/>
             </font>
         </Label>
-        <Slider fx:id="delaySlider"/>
-        <HBox prefHeight="23.0" prefWidth="346.0">
-            <Label prefHeight="15.0" prefWidth="183.0" text="0 ms"/>
-            <Label alignment="CENTER_RIGHT" prefHeight="15.0" prefWidth="167.0" text="100ms"/>
-        </HBox>
+        <CheckBox fx:id="delaySlider" text="Задержка"/>
+
         <Button fx:id="clearAllButton" mnemonicParsing="false" prefHeight="32.0" prefWidth="353.0"
                 text="Очистить холст">
             <VBox.margin>

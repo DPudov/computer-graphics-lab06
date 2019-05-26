@@ -1,13 +1,13 @@
 package sample;
 
 import javafx.animation.AnimationTimer;
-import javafx.beans.property.IntegerProperty;
 import javafx.fxml.FXML;
+import javafx.scene.SnapshotParameters;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.*;
-import javafx.scene.image.PixelReader;
 import javafx.scene.image.PixelWriter;
+import javafx.scene.image.WritableImage;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.paint.Color;
@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.Stack;
 
+@SuppressWarnings("ALL")
 public class Controller {
     @FXML
     Button clearAllButton;
@@ -44,7 +45,7 @@ public class Controller {
     Button clojureButton;
 
     @FXML
-    Slider delaySlider;
+    CheckBox delaySlider;
 
     @FXML
     Button addSeedButton;
@@ -54,7 +55,7 @@ public class Controller {
     @FXML
     TextField inputYSeedField;
 
-    AnimationTimer loop;
+    protected AnimationTimer timer;
 
     private final LinkedList<Point> allVertices = new LinkedList<>();
     private final LinkedList<Edge> allEdges = new LinkedList<>();
@@ -70,10 +71,9 @@ public class Controller {
 
         fillPolygonButton.addEventHandler(MouseEvent.MOUSE_CLICKED, event -> {
             try {
-                double delay = delaySlider.getValue();
-                fillPolygon(delay);
+                fillPolygon(delaySlider.isSelected());
             } catch (Exception e) {
-                System.out.println("Wrong values!");
+                setAlert("Произошла ошибка JavaFX Thread при затравке с задержкой!");
             }
         });
 
@@ -90,7 +90,7 @@ public class Controller {
             try {
                 addPoint(Integer.parseInt(inputXField.getText()), Integer.parseInt(inputYField.getText()));
             } catch (NumberFormatException e) {
-                System.out.println("Wrong values!");
+                System.out.println("Введены неверные данные для новой точки");
             }
         });
 
@@ -99,7 +99,7 @@ public class Controller {
                 addSeed(Integer.parseInt(inputXSeedField.getText()), Integer.parseInt(inputYSeedField.getText()));
 
             } catch (NumberFormatException e) {
-                System.out.println("Wrong values!");
+                setAlert("Введены неверные данные для затравки!");
             }
         });
     }
@@ -162,79 +162,246 @@ public class Controller {
         seeds.clear();
     }
 
-    private void fillPolygon(double delay) {
-//        clearCanvas();
-        Point topLeft = getMinimumPoint();
-        Point bottomRight = getMaximumPoint();
-        if (topLeft != null && bottomRight != null) {
-            performFill(delay);
-        }
-//        redrawPolygons();
+    private void fillPolygon(boolean delay) {
+        performFill(delay);
     }
 
-    private void redrawPolygons() {
-        for (Polygon p : polygons) {
-            for (Edge e : p.getEdges()) {
-                drawLine(e);
+    private void performFill(boolean delay) {
+        if (!delay) {
+            for (Point seed : seeds) {
+                LineByLineSeedAlgorithm(seed);
+            }
+        } else {
+            for (Point seed : seeds) {
+                AlgWithDelay(seed);
             }
         }
-        for (Edge e : new Polygon(currentPolygon).getEdges()) {
-            drawLine(e);
+
+        seeds.clear();
+    }
+
+    private boolean checkSeedPoint(Point seed) {
+        int xValue = seed.getX();
+        int yValue = seed.getY();
+        int width = (int) canvas.getWidth();
+        int height = (int) canvas.getHeight();
+        return xValue >= 0 && xValue < width && yValue >= 0 && yValue < height;
+    }
+
+    private void setAlert(String message) {
+        Alert alert = new Alert(Alert.AlertType.ERROR);
+        alert.setContentText(message);
+        alert.setTitle("Произошла ошибка :(");
+        alert.setHeaderText("ОШИБКА");
+        alert.show();
+    }
+
+    private void AlgWithDelay(Point seed) {
+        if (!checkSeedPoint(seed)) {
+            setAlert("Точка затравки вне границ холста");
+            return;
         }
-    }
-
-    private void performFill(double delay) {
-        for (Point seed : seeds) {
-            SeedAlgorithm(seed);
-        }
-    }
-
-    private void LineByLineSeedAlgorithm(Point seed) {
         GraphicsContext gc = canvas.getGraphicsContext2D();
-        PixelWriter writer = gc.getPixelWriter();
-        // TODO: simple line by line algo
-    }
 
+        WritableImage image = new WritableImage((int) canvas.getWidth(), (int) canvas.getHeight());
+        WritableImage snapshot = canvas.snapshot(new SnapshotParameters(), image);
+        PixelWriter writer = snapshot.getPixelWriter();
 
-    private void SeedAlgorithm(Point seed) {
-        GraphicsContext gc = canvas.getGraphicsContext2D();
-        PixelWriter writer = gc.getPixelWriter();
-        PixelReader reader = canvas.snapshot(null, null).getPixelReader();
         Color fillColor = fillPicker.getValue();
         Color borderColor = boundPicker.getValue();
         Stack<Point> stack = new Stack<>();
-        Point currentPoint;
-        Color currentColor;
+        final Point[] currentPoint = new Point[1];
         stack.push(seed);
-        while (!stack.isEmpty()) {
-            currentPoint = stack.pop();
-            currentColor = reader.getColor(currentPoint.getX(), currentPoint.getY());
-            int x = currentPoint.getX();
-            int y = currentPoint.getY();
-            if (currentColor != fillColor && currentColor != borderColor) {
+
+
+        timer = new AnimationTimer() {
+            @Override
+            public void handle(long l) {
+                if (stack.isEmpty()) {
+                    timer.stop();
+                    return;
+                }
+                currentPoint[0] = stack.pop();
+                int x = currentPoint[0].getX();
+                int y = currentPoint[0].getY();
+                if (notInCanvasBorder(x, y)) {
+                    return;
+                }
                 writer.setColor(x, y, fillColor);
+
+                int tempX = x;
+                // заполняем интервал справа от затравки
+                x += 1;
+                while (!areEqual(x, y, borderColor, snapshot)) {
+                    if (notInCanvasBorder(x, y)) {
+                        return;
+                    }
+                    writer.setColor(x, y, fillColor);
+                    x += 1;
+                }
+                // сохраняем крайний справа пиксел
+                int xRight = x - 1;
+                x = tempX;
+                // заполняем слева от затравки
+                x -= 1;
+                while (!areEqual(x, y, borderColor, snapshot)) {
+                    if (notInCanvasBorder(x, y)) {
+                        return;
+                    }
+                    writer.setColor(x, y, fillColor);
+                    x -= 1;
+                }
+
+                // сохраняем крайний слева пиксел
+                int xLeft = x + 1;
+                /*
+            Проверим, что строка выше не является ни границей многоугольника, ни уже полностью заполненной
+            Если это не так, то найти затравку, начиная с левого края подынтервала сканирующей строки
+             */
+                x = xLeft;
+                y += 1;
+
+                checkLine(snapshot, fillColor, borderColor, stack, x, y, xRight);
+
+            /*
+            Проверим, что строка ниже не является ни границей многоугольника, ни уже полностью заполненной
+            Если это не так, то найти затравку, начиная с левого края подынтервала сканирующей строки
+             */
+                x = xLeft;
+                y -= 2;
+                checkLine(snapshot, fillColor, borderColor, stack, x, y, xRight);
+                gc.drawImage(snapshot, 0, 0);
             }
-            if (!isDone(x + 1, y)) {
-                stack.push(new Point(x + 1, y));
-            }
-            if (!isDone(x, y + 1)) {
-                stack.push(new Point(x, y + 1));
-            }
-            if (!isDone(x - 1, y)) {
-                stack.push(new Point(x - 1, y));
-            }
-            if (!isDone(x, y - 1)) {
-                stack.push(new Point(x, y - 1));
-            }
-        }
+        };
+
+        timer.start();
+//        gc.drawImage(snapshot, 0, 0);
 
     }
 
-    private boolean isDone(int x, int y) {
-        Color fill = fillPicker.getValue();
-        Color border = boundPicker.getValue();
-        Color pixel = canvas.snapshot(null, null).getPixelReader().getColor(x, y);
-        return pixel.equals(fill) || pixel.equals(border);
+    private void LineByLineSeedAlgorithm(Point seed) {
+        if (!checkSeedPoint(seed)) {
+            setAlert("Точка затравки вне границ холста");
+            return;
+        }
+        GraphicsContext gc = canvas.getGraphicsContext2D();
+
+        WritableImage image = new WritableImage((int) canvas.getWidth(), (int) canvas.getHeight());
+        WritableImage snapshot = canvas.snapshot(new SnapshotParameters(), image);
+        PixelWriter writer = snapshot.getPixelWriter();
+
+        Color fillColor = fillPicker.getValue();
+        Color borderColor = boundPicker.getValue();
+        Stack<Point> stack = new Stack<>();
+        final Point[] currentPoint = new Point[1];
+        stack.push(seed);
+        while (!stack.isEmpty()) {
+
+
+            currentPoint[0] = stack.pop();
+            int x = currentPoint[0].getX();
+            int y = currentPoint[0].getY();
+            if (notInCanvasBorder(x, y)) {
+                return;
+            }
+            writer.setColor(x, y, fillColor);
+
+            int tempX = x;
+            // заполняем интервал справа от затравки
+            x += 1;
+            while (!areEqual(x, y, borderColor, snapshot)) {
+                if (notInCanvasBorder(x, y)) {
+                    return;
+                }
+                writer.setColor(x, y, fillColor);
+                x += 1;
+            }
+            // сохраняем крайний справа пиксел
+            int xRight = x - 1;
+            x = tempX;
+            // заполняем слева от затравки
+            x -= 1;
+            while (!areEqual(x, y, borderColor, snapshot)) {
+                if (notInCanvasBorder(x, y)) {
+                    return;
+                }
+                writer.setColor(x, y, fillColor);
+                x -= 1;
+            }
+
+            // сохраняем крайний слева пиксел
+            int xLeft = x + 1;
+                /*
+            Проверим, что строка выше не является ни границей многоугольника, ни уже полностью заполненной
+            Если это не так, то найти затравку, начиная с левого края подынтервала сканирующей строки
+             */
+            x = xLeft;
+            y += 1;
+
+            checkLine(snapshot, fillColor, borderColor, stack, x, y, xRight);
+
+            /*
+            Проверим, что строка ниже не является ни границей многоугольника, ни уже полностью заполненной
+            Если это не так, то найти затравку, начиная с левого края подынтервала сканирующей строки
+             */
+            x = xLeft;
+            y -= 2;
+            checkLine(snapshot, fillColor, borderColor, stack, x, y, xRight);
+
+        }
+
+
+        gc.drawImage(snapshot, 0, 0);
+    }
+
+    private void checkLine(WritableImage snapshot, Color fillColor, Color borderColor, Stack<Point> stack, int x, int y, int xRight) {
+        if (!areEqual(x, y, borderColor, snapshot) && !areEqual(x, y, fillColor, snapshot)) {
+            if (notInCanvasBorder(x, y)) {
+                return;
+            }
+            snapshot.getPixelWriter().setColor(x, y, fillColor);
+            stack.push(new Point(x, y));
+
+        }
+        while (x <= xRight) {
+            boolean flag = false;
+            while (!areEqual(x, y, borderColor, snapshot) && !areEqual(x, y, fillColor, snapshot) && x <= xRight) {
+                if (!flag) {
+                    flag = true;
+                }
+                x += 1;
+            }
+
+            if (flag) {
+                if (x == xRight && !areEqual(x, y, borderColor, snapshot) && !areEqual(x, y, fillColor, snapshot)) {
+                    stack.push(new Point(x, y));
+                } else {
+                    stack.push(new Point(x - 1, y));
+                }
+            }
+            // продолжим проверку, если интервал был прерван
+            int xEnter = x;
+            while ((areEqual(x, y, borderColor, snapshot) || areEqual(x, y, fillColor, snapshot)) && x < xRight) {
+                x += 1;
+            }
+            // удостоверимся, что координата пиксела увеличена
+            if (x == xEnter) {
+                x += 1;
+            }
+
+        }
+    }
+
+    private boolean areEqual(int x, int y, Color colorNew, WritableImage image) {
+        if (notInCanvasBorder(x, y)) {
+            return true;
+        }
+        Color colorCanvas = image.getPixelReader().getColor(x, y);
+        return colorCanvas.equals(colorNew);
+    }
+
+    private boolean notInCanvasBorder(int x, int y) {
+        return x < 0 || !(x < canvas.getWidth()) || y < 0 || !(y < canvas.getHeight());
     }
 
     private void closePolygon() {
@@ -307,76 +474,5 @@ public class Controller {
 
     private void drawLine(int xBegin, int yBegin, int xEnd, int yEnd) {
         LineDrawer.DigitalDiffAnalyzeDraw(canvas, xBegin, yBegin, xEnd, yEnd, boundPicker.getValue());
-    }
-
-
-    private Point getMaximumPoint() {
-        if (!allEdges.isEmpty()) {
-            int maxX = Integer.MIN_VALUE;
-            int maxY = Integer.MIN_VALUE;
-            for (Edge edge : allEdges) {
-                Point currentBegin = edge.getBegin();
-                Point currentEnd = edge.getEnd();
-                int x0 = currentBegin.getX();
-                int y0 = currentBegin.getY();
-                int xe = currentEnd.getX();
-                int ye = currentEnd.getY();
-                maxX = max(x0, xe, maxX);
-                maxY = max(y0, ye, maxY);
-            }
-            return new Point(maxX + 10, maxY + 10);
-        }
-        return null;
-    }
-
-    private Point getMinimumPoint() {
-        if (!allEdges.isEmpty()) {
-            int minX = Integer.MAX_VALUE;
-            int minY = Integer.MAX_VALUE;
-            for (Edge edge : allEdges) {
-                Point currentBegin = edge.getBegin();
-                Point currentEnd = edge.getEnd();
-                int x0 = currentBegin.getX();
-                int y0 = currentBegin.getY();
-                int xe = currentEnd.getX();
-                int ye = currentEnd.getY();
-                minX = min(x0, xe, minX);
-                minY = min(y0, ye, minY);
-            }
-            return new Point(minX - 10, minY - 10);
-        }
-        return null;
-    }
-
-    private int max(int a, int b, int c) {
-        if (a > b) {
-            if (a > c) {
-                return a;
-            } else {
-                return c;
-            }
-        } else {
-            if (b > c) {
-                return b;
-            } else {
-                return c;
-            }
-        }
-    }
-
-    private int min(int a, int b, int c) {
-        if (a < b) {
-            if (a < c) {
-                return a;
-            } else {
-                return c;
-            }
-        } else {
-            if (b < c) {
-                return b;
-            } else {
-                return c;
-            }
-        }
     }
 }
