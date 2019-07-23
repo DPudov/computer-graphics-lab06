@@ -51,9 +51,5 @@ public class Edge {
         setBeginInit(false);
     }
 
-    public boolean isHorizontal() {
-        return getEnd().getY() == getBegin().getY();
-    }
-
 
 }

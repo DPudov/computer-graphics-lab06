@@ -408,7 +408,7 @@ public class Controller {
         if (currentPolygon.size() > 1) {
             addPoint(currentPolygon.get(0).getBegin().getX(), currentPolygon.get(0).getBegin().getY());
             LinkedList<Edge> copy = new LinkedList<>(currentPolygon);
-            polygons.add(new Polygon(copy));
+            polygons.add(new Polygon());
             currentPolygon.clear();
             currentEdge.setBeginInit(false);
             currentEdge.setEndInit(false);
